@@ -1,6 +1,6 @@
 import numpy as np
+import sbx
 from custom_envs.filter_wrappers import ActionFilterButter
-from sbx import CrossQ
 
 from . import BaseController
 
@@ -62,8 +62,8 @@ class Controller(BaseController):
         # import warnings
         # warnings.filterwarnings("ignore")
 
-        self.rl_model = CrossQ.load(
-            "./logs/crossq/TinyPhysicsEnv-v0_11/best_model.zip",
+        self.rl_model = sbx.CrossQ.load(
+            "./logs/crossq/TinyPhysicsEnv-v0_13/best_model.zip",
             # custom_objects={
             #     "actor": None,
             #     "lr_schedule": None,

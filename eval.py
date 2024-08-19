@@ -163,7 +163,7 @@ if __name__ == "__main__":
     for controller_cat, controller_type in [("baseline", args.baseline_controller), ("test", args.test_controller)]:
         print(f"Running batch rollouts => {controller_cat} controller: {controller_type}")
         rollout_partial = partial(run_rollout, controller_type=controller_type, model_path=args.model_path, debug=False)
-        if controller_cat == "baseline":
+        if controller_cat == "baseline" or True:
             results = process_map(rollout_partial, files[SAMPLE_ROLLOUTS:], max_workers=8, chunksize=10)
         else:
             # without multiprocessing
