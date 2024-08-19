@@ -25,6 +25,8 @@ from controllers import BaseController
 sns.set_theme()
 signal.signal(signal.SIGINT, signal.SIG_DFL)  # Enable Ctrl-C on plot windows
 
+CURRENT_DIR = Path(__file__).resolve().parent
+
 ACC_G = 9.81
 FPS = 10
 CONTROL_START_IDX = 100
@@ -110,13 +112,15 @@ class TinyPhysicsSimulator:
         data_path: str,
         controller: Optional[BaseController] = None,
         debug: bool = False,
+        reset: bool = True,
     ) -> None:
         self.data_path = data_path
         self.sim_model = model
         self.data = self.get_data(data_path)
         self.controller = controller
         self.debug = debug
-        self.reset()
+        if reset:
+            self.reset()
 
     def reset(self, fixed_seed: bool = True) -> None:
         self.step_idx = CONTEXT_LENGTH
@@ -159,8 +163,8 @@ class TinyPhysicsSimulator:
 
         self.current_lataccel_history.append(self.current_lataccel)
 
-    def control_step(self, step_idx: int, action: Optional[np.ndarray]) -> None:
-        if not action:
+    def control_step(self, step_idx: int, action: Optional[float]) -> None:
+        if not action and not step_idx < CONTROL_START_IDX:
             assert self.controller is not None, "Controller is not initialized"
             action = self.controller.update(
                 self.target_lataccel_history[step_idx],
@@ -208,7 +212,7 @@ class TinyPhysicsSimulator:
             ),
         )
 
-    def step(self, action: Optional[np.ndarray] = None) -> tuple[np.ndarray, float, bool, bool, dict]:
+    def step(self, action: Optional[float] = None) -> tuple[np.ndarray, float, bool, bool, dict]:
         state, target, futureplan = self.get_state_target_futureplan(self.step_idx)
         self.state_history.append(state)
         self.target_lataccel_history.append(target)
@@ -290,24 +294,39 @@ class TinyPhysicsSimulator:
 
 # Gym interface for the simulator
 class TinyPhysicsEnv(gymnasium.Env):
-    def __init__(self, model_path: str, data_path: str, controller: BaseController, debug: bool = False):
-        self.sim = TinyPhysicsSimulator(TinyPhysicsModel(model_path, debug), data_path, controller, debug)
-        self.action_scale = STEER_RANGE[1]
-        self.action_space = Box(low=-1.0, high=1.0, shape=(1,), dtype=np.float32)
+    sim: TinyPhysicsSimulator
+
+    def __init__(self, debug: bool = False):
+        super().__init__()
+        self.data_path = CURRENT_DIR / "data"
+        # Do not take the first 7000 files, used for evaluation
+        self.datasets = sorted(list(self.data_path.glob("*.csv")))[7000:]
+        self.model_path = CURRENT_DIR / "models/tinyphysics.onnx"
+
         # TODO: check bounds, should be -5 to 5
         # self.observation_space = Box(low=-np.inf, high=np.inf, shape=(4,), dtype=np.float32)
         # with future plan (next target lataccel, next roll lataccel, next v_ego, next a_ego)
         self.observation_space = Box(low=-np.inf, high=np.inf, shape=(9,), dtype=np.float32)
+        self.action_space = Box(low=-1.0, high=1.0, shape=(1,), dtype=np.float32)
+        self.action_scale = STEER_RANGE[1]
+
+        self.debug = debug
 
     def reset(self, seed: Optional[int] = None, options=None) -> tuple[np.ndarray, dict]:
+        # Select a random dataset
+        data_path = self.data_path / np.random.choice(self.datasets)  # type: ignore[arg-type]
+
+        self.sim = TinyPhysicsSimulator(
+            TinyPhysicsModel(self.model_path, self.debug), str(data_path), None, self.debug, reset=False
+        )
         self.sim.reset(fixed_seed=False)
         # Warm up the controller
-        for _ in range(CONTROL_START_IDX):
-            obs, *_ = self.sim.step()
+        for idx in range(CONTROL_START_IDX - CONTEXT_LENGTH):
+            obs, _, _, _, _ = self.sim.step()
         return obs, {}
 
     def step(self, action: np.ndarray) -> tuple[np.ndarray, float, bool, bool, dict]:
-        return self.sim.step(action * self.action_scale)
+        return self.sim.step(action.item() * self.action_scale)
 
 
 def get_available_controllers():
