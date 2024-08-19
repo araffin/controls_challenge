@@ -331,7 +331,7 @@ class TinyPhysicsEnv(gymnasium.Env):
         )
         self.sim.reset(fixed_seed=False)
         # Warm up the controller
-        for idx in range(CONTROL_START_IDX - CONTEXT_LENGTH):
+        for _ in range(CONTROL_START_IDX - CONTEXT_LENGTH):
             obs, _, _, _, _ = self.sim.step()
         return obs, {}
 
