@@ -231,8 +231,12 @@ class TinyPhysicsSimulator:
         self.control_step(self.step_idx, action)
         self.sim_step(self.step_idx)
         self.step_idx += 1
-        obs = self.get_observation()
-        reward = self.compute_immediate_reward()
+        if self.step_idx < len(self.data):
+            obs = self.get_observation()
+            reward = self.compute_immediate_reward()
+        else:
+            obs = np.zeros(9)
+            reward = 0.0
 
         terminated = False
         truncated = self.step_idx >= len(self.data) - 1
@@ -308,7 +312,7 @@ class TinyPhysicsSimulator:
 class TinyPhysicsEnv(gymnasium.Env):
     sim: TinyPhysicsSimulator
 
-    def __init__(self, debug: bool = False, max_range: float = 2.0, use_pid: bool = False):
+    def __init__(self, debug: bool = False, max_range: float = 2.0, use_pid: bool = False, pid_actions: bool = False):
         super().__init__()
         self.data_path = CURRENT_DIR / "data"
         # Do not take the first 7000 files, used for evaluation
@@ -325,10 +329,15 @@ class TinyPhysicsEnv(gymnasium.Env):
         # self.observation_space = Box(low=-np.inf, high=np.inf, shape=(9,), dtype=np.float32)
         # PID obs
         # self.observation_space = Box(low=-np.inf, high=np.inf, shape=(3,), dtype=np.float32)
-        # PID obs + future plan
-        self.observation_space = Box(low=-np.inf, high=np.inf, shape=(6,), dtype=np.float32)
+        # PID obs + future plan + last action
+        self.observation_space = Box(low=-np.inf, high=np.inf, shape=(7,), dtype=np.float32)
 
         self.action_space = Box(low=-1.0, high=1.0, shape=(1,), dtype=np.float32)
+        self.pid_actions = pid_actions
+        if pid_actions:
+            # Kp, Ki, Kd
+            self.action_space = Box(low=-1.0, high=1.0, shape=(3,), dtype=np.float32)
+
         self.action_scale = max_range  # STEER_RANGE[1]
         self.pid_controller = PIDController()
         self.use_pid = use_pid
@@ -369,7 +378,8 @@ class TinyPhysicsEnv(gymnasium.Env):
         self.error_integral += error
         self.prev_error = error
         self.error_integral = np.clip(self.error_integral, -5, 5)
-        return np.array([error, error_diff, self.error_integral]).astype(np.float32)
+        last_action = self.sim.action_history[-1] if self.sim.action_history else 0.0
+        return np.array([error, error_diff, self.error_integral, last_action]).astype(np.float32)
 
     def get_pid_plus_obs(self, current_lataccel: float, target_lataccel: float) -> np.ndarray:
         obs_pid = self.get_pid_obs(current_lataccel, target_lataccel)
@@ -382,8 +392,21 @@ class TinyPhysicsEnv(gymnasium.Env):
 
     def step(self, action: np.ndarray) -> tuple[np.ndarray, float, bool, bool, dict]:
         # TODO: check off-by-one error
-        action = action.item() * self.action_scale
         state, target, futureplan = self.sim.get_state_target_futureplan(self.sim.step_idx)
+
+        if self.pid_actions:
+            kp, ki, kd = action
+            self.pid_controller.p = abs(kp)
+            self.pid_controller.i = abs(ki) * 0.1
+            self.pid_controller.d = -abs(kd) * 0.5
+            action = self.pid_controller.update(
+                target,
+                self.sim.current_lataccel,
+                state,
+                future_plan=futureplan,
+            )
+        else:
+            action = action.item() * self.action_scale
 
         if self.use_pid:
             action_pid = self.pid_controller.update(
@@ -393,6 +416,7 @@ class TinyPhysicsEnv(gymnasium.Env):
                 future_plan=futureplan,
             )
             action += action_pid
+            # action = action_pid
 
         obs, reward, terminated, truncated, info = self.sim.step(float(action))
 

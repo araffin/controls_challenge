@@ -4,17 +4,17 @@ default_hyperparams = dict(
     policy="MlpPolicy",
     # qf_learning_rate=1e-3,
     # policy_kwargs={},
-    learning_starts=10_000,
-    env_wrapper=[
-        {"rl_zoo3.wrappers.HistoryWrapper": {"horizon": 2}},
-        {
-            "custom_envs.filter_wrappers.ActionFilterWrapper": {
-                "sampling_rate": 60,
-                "lowcut": 0,
-                "highcut": 4,
-            }
-        },
-    ],
+    learning_starts=5000,
+    # env_wrapper=[
+    #     {"rl_zoo3.wrappers.HistoryWrapper": {"horizon": 2}},
+    #     {
+    #         "custom_envs.filter_wrappers.ActionFilterWrapper": {
+    #             "sampling_rate": 60,
+    #             "lowcut": 0,
+    #             "highcut": 4,
+    #         }
+    #     },
+    # ],
 )
 
 hyperparams = {}
