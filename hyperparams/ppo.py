@@ -5,6 +5,7 @@ default_hyperparams = dict(
     policy="MlpPolicy",
     policy_kwargs={},
     normalize=True,
+    env_wrapper=[{"rl_zoo3.wrappers.HistoryWrapper": {"horizon": 2}}],
 )
 
 hyperparams = {}

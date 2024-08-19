@@ -21,6 +21,7 @@ from gymnasium.spaces import Box
 from tqdm.contrib.concurrent import process_map
 
 from controllers import BaseController
+from controllers.pid import Controller as PIDController
 
 sns.set_theme()
 signal.signal(signal.SIGINT, signal.SIG_DFL)  # Enable Ctrl-C on plot windows
@@ -164,7 +165,7 @@ class TinyPhysicsSimulator:
         self.current_lataccel_history.append(self.current_lataccel)
 
     def control_step(self, step_idx: int, action: Optional[float]) -> None:
-        if not action and not step_idx < CONTROL_START_IDX:
+        if action is None and not step_idx < CONTROL_START_IDX:
             assert self.controller is not None, "Controller is not initialized"
             action = self.controller.update(
                 self.target_lataccel_history[step_idx],
@@ -241,11 +242,11 @@ class TinyPhysicsSimulator:
         last_pred = np.array(self.current_lataccel_history)[-2]
         pred = np.array(self.current_lataccel_history)[-1]
         target = np.array(self.target_lataccel_history)[-1]
-        lat_accel_cost = np.mean((target - pred) ** 2) * 100
+        lat_accel_cost = np.mean((target - pred) ** 2)
         # jerk_cost = np.mean((np.diff(pred) / DEL_T) ** 2) * 100
-        jerk_cost = np.mean(((pred - last_pred) / DEL_T) ** 2) * 100
+        jerk_cost = np.mean(((pred - last_pred) / DEL_T) ** 2)
         total_cost = (lat_accel_cost * LAT_ACCEL_COST_MULTIPLIER) + jerk_cost
-        return -total_cost
+        return -total_cost * 0.1
 
     def plot_data(self, ax, lines, axis_labels, title) -> None:
         ax.clear()
@@ -306,7 +307,7 @@ class TinyPhysicsSimulator:
 class TinyPhysicsEnv(gymnasium.Env):
     sim: TinyPhysicsSimulator
 
-    def __init__(self, debug: bool = False):
+    def __init__(self, debug: bool = False, max_range: float = 2.0):
         super().__init__()
         self.data_path = CURRENT_DIR / "data"
         # Do not take the first 7000 files, used for evaluation
@@ -316,9 +317,13 @@ class TinyPhysicsEnv(gymnasium.Env):
         # TODO: check bounds, should be -5 to 5
         # self.observation_space = Box(low=-np.inf, high=np.inf, shape=(4,), dtype=np.float32)
         # with future plan (next target lataccel, next roll lataccel, next v_ego, next a_ego)
-        self.observation_space = Box(low=-np.inf, high=np.inf, shape=(9,), dtype=np.float32)
+        # self.observation_space = Box(low=-np.inf, high=np.inf, shape=(9,), dtype=np.float32)
+
+        self.n_obs = 9
+        self.observation_space = Box(low=-np.inf, high=np.inf, shape=(self.n_obs,), dtype=np.float32)
         self.action_space = Box(low=-1.0, high=1.0, shape=(1,), dtype=np.float32)
-        self.action_scale = STEER_RANGE[1]
+        self.action_scale = max_range  # STEER_RANGE[1]
+        self.pid_controller = PIDController()
 
         self.debug = debug
 
@@ -329,14 +334,24 @@ class TinyPhysicsEnv(gymnasium.Env):
         self.sim = TinyPhysicsSimulator(
             TinyPhysicsModel(self.model_path, self.debug), str(data_path), None, self.debug, reset=False
         )
+        # self.sim.controller = self.pid_controller
         self.sim.reset(fixed_seed=False)
         # Warm up the controller
         for _ in range(CONTROL_START_IDX - CONTEXT_LENGTH):
             obs, _, _, _, _ = self.sim.step()
-        return obs, {}
+        return obs[: self.n_obs], {}
 
     def step(self, action: np.ndarray) -> tuple[np.ndarray, float, bool, bool, dict]:
-        return self.sim.step(action.item() * self.action_scale)
+        # TODO: check off-by-one error
+        action_pid = self.pid_controller.update(
+            self.sim.target_lataccel_history[self.sim.step_idx - 1],
+            self.sim.current_lataccel,
+            self.sim.state_history[self.sim.step_idx - 1],
+            future_plan=self.sim.futureplan,
+        )
+        action = action.item() * self.action_scale + action_pid
+        obs, reward, terminated, truncated, info = self.sim.step(action)
+        return obs[: self.n_obs], reward, terminated, truncated, info
 
 
 def get_available_controllers():

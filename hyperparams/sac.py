@@ -5,6 +5,7 @@ default_hyperparams = dict(
     # qf_learning_rate=1e-3,
     # policy_kwargs={},
     learning_starts=10_000,
+    env_wrapper=[{"rl_zoo3.wrappers.HistoryWrapper": {"horizon": 2}}],
 )
 
 hyperparams = {}
