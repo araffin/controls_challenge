@@ -5,6 +5,37 @@ from sbx import CrossQ
 from . import BaseController
 
 
+class HistoryWrapper:
+    """
+    Stack past observations and actions to give an history to the agent.
+    """
+
+    def __init__(self, obs_size: int = 7, n_actions: int = 1, horizon: int = 2):
+        self.horizon = horizon
+        self.obs_history = np.zeros((horizon * obs_size,), np.float32)
+        self.action_history = np.zeros((horizon * n_actions,), np.float32)
+
+    def _create_obs_from_history(self) -> np.ndarray:
+        return np.concatenate((self.obs_history, self.action_history))
+
+    def reset(self, obs: np.ndarray):
+        # Flush the history
+        self.obs_history[...] = 0
+        self.action_history[...] = 0
+        self.obs_history[..., -obs.shape[-1] :] = obs
+        return self._create_obs_from_history()
+
+    def step(self, obs: np.ndarray, action: np.ndarray) -> np.ndarray:
+        last_ax_size = obs.shape[-1]
+
+        self.obs_history = np.roll(self.obs_history, shift=-last_ax_size, axis=-1)
+        self.obs_history[..., -obs.shape[-1] :] = obs
+
+        self.action_history = np.roll(self.action_history, shift=-action.shape[-1], axis=-1)
+        self.action_history[..., -action.shape[-1] :] = action
+        return self._create_obs_from_history()
+
+
 class Controller(BaseController):
     """
     A simple PID controller
@@ -27,9 +58,23 @@ class Controller(BaseController):
         self._action_filter.reset()
         self._action_filter.init_history(np.zeros(1))
 
-        self.rl_model = CrossQ.load("./logs/TinyPhysicsEnv-v0_7/best_model.zip")
-        self.action_scale = 1.0
+        # Silence user warnings
+        # import warnings
+        # warnings.filterwarnings("ignore")
+
+        self.rl_model = CrossQ.load(
+            "./logs/crossq/TinyPhysicsEnv-v0_11/best_model.zip",
+            # custom_objects={
+            #     "actor": None,
+            #     "lr_schedule": None,
+            #     "ent_coef_state": None,
+            #     "policy": None,
+            #     "qf": None,
+            # },
+        )
+        self.action_scale = 0.5
         self.last_action = 0.0
+        self.history_wrapper = HistoryWrapper()
 
     def update(self, target_lataccel, current_lataccel, state, future_plan) -> float:
         # PID
@@ -53,6 +98,8 @@ class Controller(BaseController):
             ]
         )
         rl_obs = np.array([*obs_pid, *next_lateral_accel]).astype(np.float32)
+        rl_obs = self.history_wrapper.step(rl_obs, np.array([self.last_action]))
+
         rl_action = self.rl_model.predict(rl_obs, deterministic=True)[0]
         rl_action = self._action_filter.filter(rl_action)
 
