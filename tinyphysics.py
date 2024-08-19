@@ -399,7 +399,7 @@ class TinyPhysicsEnv(gymnasium.Env):
             self.pid_controller.p = abs(kp)
             self.pid_controller.i = abs(ki) * 0.1
             self.pid_controller.d = -abs(kd) * 0.5
-            action = self.pid_controller.update(
+            action = self.pid_controller.update(  # type: ignore[assignment]
                 target,
                 self.sim.current_lataccel,
                 state,
