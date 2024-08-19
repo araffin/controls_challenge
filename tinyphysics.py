@@ -180,6 +180,16 @@ class TinyPhysicsSimulator:
 
     def get_observation(self) -> np.ndarray:
         state, target_lataccel, futureplan = self.get_state_target_futureplan(self.step_idx)
+
+        # For the last step, no future plan is available
+        if self.step_idx == len(self.data) - 1:
+            futureplan = FuturePlan(
+                lataccel=[0] * FUTURE_PLAN_STEPS,
+                roll_lataccel=[0] * FUTURE_PLAN_STEPS,
+                v_ego=[0] * FUTURE_PLAN_STEPS,
+                a_ego=[0] * FUTURE_PLAN_STEPS,
+            )
+
         return (
             np.array(
                 [
