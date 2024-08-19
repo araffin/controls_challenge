@@ -245,6 +245,7 @@ class TinyPhysicsSimulator:
         lat_accel_cost = np.mean((target - pred) ** 2)
         # jerk_cost = np.mean((np.diff(pred) / DEL_T) ** 2) * 100
         jerk_cost = np.mean(((pred - last_pred) / DEL_T) ** 2)
+        jerk_cost = np.clip(jerk_cost, 0, 5)
         total_cost = (lat_accel_cost * LAT_ACCEL_COST_MULTIPLIER) + jerk_cost
         return -total_cost * 0.1
 
@@ -307,7 +308,7 @@ class TinyPhysicsSimulator:
 class TinyPhysicsEnv(gymnasium.Env):
     sim: TinyPhysicsSimulator
 
-    def __init__(self, debug: bool = False, max_range: float = 2.0, use_pid: bool = True):
+    def __init__(self, debug: bool = False, max_range: float = 2.0, use_pid: bool = False):
         super().__init__()
         self.data_path = CURRENT_DIR / "data"
         # Do not take the first 7000 files, used for evaluation
@@ -319,14 +320,20 @@ class TinyPhysicsEnv(gymnasium.Env):
         # with future plan (next target lataccel, next roll lataccel, next v_ego, next a_ego)
         # self.observation_space = Box(low=-np.inf, high=np.inf, shape=(9,), dtype=np.float32)
 
-        self.n_obs = 9
         # if use_pid:
         #     self.n_obs += 1
-        self.observation_space = Box(low=-np.inf, high=np.inf, shape=(self.n_obs,), dtype=np.float32)
+        # self.observation_space = Box(low=-np.inf, high=np.inf, shape=(9,), dtype=np.float32)
+        # PID obs
+        # self.observation_space = Box(low=-np.inf, high=np.inf, shape=(3,), dtype=np.float32)
+        # PID obs + future plan
+        self.observation_space = Box(low=-np.inf, high=np.inf, shape=(6,), dtype=np.float32)
+
         self.action_space = Box(low=-1.0, high=1.0, shape=(1,), dtype=np.float32)
         self.action_scale = max_range  # STEER_RANGE[1]
         self.pid_controller = PIDController()
         self.use_pid = use_pid
+        self.prev_error = 0.0
+        self.error_integral = 0.0
 
         self.debug = debug
 
@@ -347,20 +354,38 @@ class TinyPhysicsEnv(gymnasium.Env):
 
         # if self.use_pid:
         #     obs = np.append(obs, 0.0)
+        _, target, _ = self.sim.get_state_target_futureplan(self.sim.step_idx)
 
-        return obs[: self.n_obs], {}
+        # PID obs
+        self.error_integral = 0.0
+        self.prev_error = 0.0
+        obs = self.get_pid_plus_obs(self.sim.current_lataccel, target)
+
+        return obs, {}
+
+    def get_pid_obs(self, current_lataccel: float, target_lataccel: float) -> np.ndarray:
+        error = target_lataccel - current_lataccel
+        error_diff = error - self.prev_error
+        self.error_integral += error
+        self.prev_error = error
+        self.error_integral = np.clip(self.error_integral, -5, 5)
+        return np.array([error, error_diff, self.error_integral]).astype(np.float32)
+
+    def get_pid_plus_obs(self, current_lataccel: float, target_lataccel: float) -> np.ndarray:
+        obs_pid = self.get_pid_obs(current_lataccel, target_lataccel)
+        _, _, futureplan = self.sim.get_state_target_futureplan(self.sim.step_idx)
+        next_lateral_accel = np.zeros(3)
+        n_next = min(len(futureplan.lataccel), 3)
+        next_lateral_accel[:n_next] = target_lataccel
+        next_lateral_accel[:n_next] -= futureplan.lataccel[:n_next]
+        return np.array([*obs_pid, *next_lateral_accel]).astype(np.float32)
 
     def step(self, action: np.ndarray) -> tuple[np.ndarray, float, bool, bool, dict]:
         # TODO: check off-by-one error
-        # action_pid = self.pid_controller.update(
-        #     self.sim.target_lataccel_history[self.sim.step_idx - 1],
-        #     self.sim.current_lataccel,
-        #     self.sim.state_history[self.sim.step_idx - 1],
-        #     future_plan=self.sim.futureplan,
-        # )
         action = action.item() * self.action_scale
+        state, target, futureplan = self.sim.get_state_target_futureplan(self.sim.step_idx)
+
         if self.use_pid:
-            state, target, futureplan = self.sim.get_state_target_futureplan(self.sim.step_idx)
             action_pid = self.pid_controller.update(
                 target,
                 self.sim.current_lataccel,
@@ -371,11 +396,22 @@ class TinyPhysicsEnv(gymnasium.Env):
 
         obs, reward, terminated, truncated, info = self.sim.step(float(action))
 
+        _, target, _ = self.sim.get_state_target_futureplan(self.sim.step_idx)
+
+        obs = self.get_pid_plus_obs(self.sim.current_lataccel, target)
+
         # if self.use_pid:
         #     # TODO: maybe add state of PID
         #     obs = np.append(obs, action_pid)
 
-        return obs[: self.n_obs], reward, terminated, truncated, info
+        if truncated:
+            costs = self.sim.compute_cost()
+            print(
+                f"lataccel_cost: {costs['lataccel_cost']:>6.4}, jerk_cost: {costs['jerk_cost']:>6.4}, "
+                f"total_cost: {costs['total_cost']:>6.4}"
+            )
+
+        return obs, reward, terminated, truncated, info
 
 
 def get_available_controllers():

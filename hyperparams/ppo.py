@@ -3,10 +3,25 @@ default_hyperparams = dict(
     n_envs=1,
     n_timesteps=int(1e6),
     policy="MlpPolicy",
-    policy_kwargs={},
+    policy_kwargs={"log_std_init": -1},
     normalize=True,
-    env_wrapper=[{"rl_zoo3.wrappers.HistoryWrapper": {"horizon": 2}}],
+    env_wrapper=[
+        {"rl_zoo3.wrappers.HistoryWrapper": {"horizon": 2}},
+        {
+            "custom_envs.filter_wrappers.ActionFilterWrapper": {
+                "sampling_rate": 60,
+                "lowcut": 0,
+                "highcut": 4,
+            }
+        },
+    ],
 )
+
+# - custom_envs.filter_wrappers.ActionFilterWrapper:
+#     sampling_rate: 60
+#     lowcut: 0
+#     highcut: 5
+
 
 hyperparams = {}
 

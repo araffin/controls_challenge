@@ -9,8 +9,17 @@ default_hyperparams = dict(
     gradient_steps=10,
     policy_delay=10,
     learning_starts=10_000,
-    env_wrapper=[{"rl_zoo3.wrappers.HistoryWrapper": {"horizon": 2}}],
-    normalize={"norm_obs": True, "norm_reward": False},
+    env_wrapper=[
+        {"rl_zoo3.wrappers.HistoryWrapper": {"horizon": 2}},
+        {
+            "custom_envs.filter_wrappers.ActionFilterWrapper": {
+                "sampling_rate": 60,
+                "lowcut": 0,
+                "highcut": 4,
+            }
+        },
+    ],
+    # normalize={"norm_obs": True, "norm_reward": False},
 )
 
 hyperparams = {}
