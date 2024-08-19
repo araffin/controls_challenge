@@ -1,5 +1,5 @@
 SHELL=/bin/bash
-LINT_PATHS=*.py controllers/
+LINT_PATHS=*.py controllers/ hyperparams/
 
 mypy:
 	mypy ${LINT_PATHS}
