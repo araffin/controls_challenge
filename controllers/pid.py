@@ -15,7 +15,7 @@ class Controller(BaseController):
         self.error_integral = 0
         self.prev_error = 0
 
-    def update(self, target_lataccel, current_lataccel, state, future_plan):
+    def update(self, target_lataccel, current_lataccel, state, future_plan) -> float:
         error = target_lataccel - current_lataccel
         self.error_integral += error
         error_diff = error - self.prev_error

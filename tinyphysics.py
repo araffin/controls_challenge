@@ -307,7 +307,7 @@ class TinyPhysicsSimulator:
 class TinyPhysicsEnv(gymnasium.Env):
     sim: TinyPhysicsSimulator
 
-    def __init__(self, debug: bool = False, max_range: float = 2.0):
+    def __init__(self, debug: bool = False, max_range: float = 2.0, use_pid: bool = True):
         super().__init__()
         self.data_path = CURRENT_DIR / "data"
         # Do not take the first 7000 files, used for evaluation
@@ -320,37 +320,61 @@ class TinyPhysicsEnv(gymnasium.Env):
         # self.observation_space = Box(low=-np.inf, high=np.inf, shape=(9,), dtype=np.float32)
 
         self.n_obs = 9
+        # if use_pid:
+        #     self.n_obs += 1
         self.observation_space = Box(low=-np.inf, high=np.inf, shape=(self.n_obs,), dtype=np.float32)
         self.action_space = Box(low=-1.0, high=1.0, shape=(1,), dtype=np.float32)
         self.action_scale = max_range  # STEER_RANGE[1]
         self.pid_controller = PIDController()
+        self.use_pid = use_pid
 
         self.debug = debug
 
     def reset(self, seed: Optional[int] = None, options=None) -> tuple[np.ndarray, dict]:
+        if seed is not None:
+            np.random.seed(seed)
         # Select a random dataset
         data_path = self.data_path / np.random.choice(self.datasets)  # type: ignore[arg-type]
 
         self.sim = TinyPhysicsSimulator(
-            TinyPhysicsModel(self.model_path, self.debug), str(data_path), None, self.debug, reset=False
+            TinyPhysicsModel(str(self.model_path), self.debug), str(data_path), None, self.debug, reset=False
         )
         # self.sim.controller = self.pid_controller
         self.sim.reset(fixed_seed=False)
         # Warm up the controller
         for _ in range(CONTROL_START_IDX - CONTEXT_LENGTH):
             obs, _, _, _, _ = self.sim.step()
+
+        # if self.use_pid:
+        #     obs = np.append(obs, 0.0)
+
         return obs[: self.n_obs], {}
 
     def step(self, action: np.ndarray) -> tuple[np.ndarray, float, bool, bool, dict]:
         # TODO: check off-by-one error
-        action_pid = self.pid_controller.update(
-            self.sim.target_lataccel_history[self.sim.step_idx - 1],
-            self.sim.current_lataccel,
-            self.sim.state_history[self.sim.step_idx - 1],
-            future_plan=self.sim.futureplan,
-        )
-        action = action.item() * self.action_scale + action_pid
-        obs, reward, terminated, truncated, info = self.sim.step(action)
+        # action_pid = self.pid_controller.update(
+        #     self.sim.target_lataccel_history[self.sim.step_idx - 1],
+        #     self.sim.current_lataccel,
+        #     self.sim.state_history[self.sim.step_idx - 1],
+        #     future_plan=self.sim.futureplan,
+        # )
+        action = action.item() * self.action_scale
+        if self.use_pid:
+            state, target, futureplan = self.sim.get_state_target_futureplan(self.sim.step_idx)
+            action_pid = self.pid_controller.update(
+                target,
+                self.sim.current_lataccel,
+                state,
+                future_plan=futureplan,
+            )
+            action += action_pid
+
+        obs, reward, terminated, truncated, info = self.sim.step(float(action))
+
+        # if self.use_pid:
+        #     # TODO: maybe add state of PID
+        #     obs = np.append(obs, action_pid)
+
         return obs[: self.n_obs], reward, terminated, truncated, info
 
 
