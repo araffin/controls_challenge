@@ -186,12 +186,16 @@ class LatAccelEnv(gym.Env):
 
         last_target = self.target_lataccel_history[-1]
         # Calculate reward
-        tracking_penalty = -((last_target - current_lataccel) ** 2) / MAX_LATACCEL * LAT_ACCEL_COST_MULTIPLIER
-        jerk_penalty = -jerk_penalty / MAX_JERK
+        tracking_error = (last_target - current_lataccel) ** 2
+        # tracking_penalty = -(tracking_error / MAX_LATACCEL * LAT_ACCEL_COST_MULTIPLIER)
+        # jerk_penalty = -jerk_penalty / MAX_JERK
 
         # print(f"tracking_penalty: {tracking_penalty:>6.4}, jerk_penalty: {jerk_penalty:>6.4}")
         # reward = tracking_penalty + jerk_penalty
-        reward = tracking_penalty
+        # reward = tracking_penalty
+
+        # Use bounded exponential reward
+        reward = np.exp(-tracking_error / MAX_LATACCEL)
 
         # Check if the episode is over
         terminated = False
