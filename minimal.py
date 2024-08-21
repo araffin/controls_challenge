@@ -25,6 +25,7 @@ LAT_ACCEL_COST_MULTIPLIER = 50.0
 # For normalization
 V_MAX = 50.0
 MAX_JERK = 1  # TODO: tune this
+MAX_ERROR_SUM = 10.0
 
 FUTURE_PLAN_STEPS = FPS * 5  # 5 secs
 
@@ -188,3 +189,9 @@ if __name__ == "__main__":
         total_cost = (lat_accel_cost * LAT_ACCEL_COST_MULTIPLIER) + jerk_cost
 
         print(f"lataccel_cost: {lat_accel_cost:>6.4}, jerk_cost: {jerk_cost:>6.4}, total_cost: {total_cost:>6.4}")
+
+        # Stats about actions
+        actions = np.array(action_history)[CONTROL_START_IDX:]
+        print(f"mean action: {np.mean(actions):.4f}, std action: {np.std(actions):.4f}")
+        # Min/Max
+        print(f"min action: {np.min(actions):.4f}, max action: {np.max(actions):.4f}")

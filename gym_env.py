@@ -15,6 +15,7 @@ from minimal import (
     FUTURE_PLAN_STEPS,
     LAT_ACCEL_COST_MULTIPLIER,
     MAX_ACC_DELTA,
+    MAX_ERROR_SUM,
     MAX_JERK,
     MAX_LATACCEL,
     STEER_RANGE,
@@ -50,7 +51,7 @@ class LatAccelEnv(gym.Env):
         # TODO: maybe include history?
         n_state = 3
         n_target = 1
-        n_pid = 2
+        n_pid = 4
         n_obs = n_state + n_target + FUTURE_PLAN_STEPS * n_state + n_pid
 
         self.observation_space = spaces.Box(
@@ -68,7 +69,14 @@ class LatAccelEnv(gym.Env):
         self.controller = PIDController()
 
     @staticmethod
-    def get_observation(state: State, current_lataccel: float, target: float, future_plan: FuturePlan) -> np.ndarray:
+    def get_observation(
+        state: State,
+        current_lataccel: float,
+        target: float,
+        future_plan: FuturePlan,
+        last_error: float,
+        error_integral: float,
+    ) -> np.ndarray:
         future_plan_obs = np.zeros(3 * FUTURE_PLAN_STEPS)
         state_obs = np.array([state.roll_lataccel / MAX_LATACCEL, state.v_ego / V_MAX, state.a_ego])
         target_obs = np.array([target])
@@ -79,7 +87,16 @@ class LatAccelEnv(gym.Env):
         future_plan_obs[FUTURE_PLAN_STEPS : FUTURE_PLAN_STEPS + n_future_steps] = np.array(future_plan.v_ego) / V_MAX
         future_plan_obs[2 * FUTURE_PLAN_STEPS : 2 * FUTURE_PLAN_STEPS + n_future_steps] = np.array(future_plan.a_ego)
         # Preprocess and give error as input too
-        pid_obs = np.array([current_lataccel, (target - current_lataccel)]) / MAX_LATACCEL
+        current_error = target - current_lataccel
+        error_diff = current_error - last_error
+        pid_obs = np.array(
+            [
+                current_lataccel / MAX_LATACCEL,
+                current_error / MAX_LATACCEL,
+                error_diff / MAX_LATACCEL,
+                error_integral / MAX_ERROR_SUM,
+            ]
+        )
         # Concatenate all observations
         return np.concatenate([state_obs, target_obs, future_plan_obs, pid_obs]).astype(np.float32)
 
@@ -96,6 +113,8 @@ class LatAccelEnv(gym.Env):
         self.action_history = self.data["steer_command"].values[:CONTEXT_LENGTH].tolist()
         self.target_lataccel_history = []
         self.current_lataccel_history = []
+        self.last_error = 0.0
+        self.error_integral = 0.0
 
         for i in range(CONTEXT_LENGTH):
             state, target, futureplan = get_state_target_futureplan(self.data, i)
@@ -114,9 +133,18 @@ class LatAccelEnv(gym.Env):
             self.action_history.append(action)
             current_lataccel = get_state_target_futureplan(self.data, self.step_idx)[1]
             self.current_lataccel_history.append(current_lataccel)
+            self.last_error = target - current_lataccel
+            self.error_integral += self.last_error
             self.step_idx += 1
 
-        obs = self.get_observation(state, current_lataccel, target, future_plan)
+        obs = self.get_observation(
+            state,
+            current_lataccel,
+            target,
+            future_plan,
+            self.last_error,
+            self.error_integral,
+        )
         return obs, {}
 
     def step(self, action: np.ndarray) -> tuple[np.ndarray, float, bool, bool, dict]:
@@ -173,10 +201,19 @@ class LatAccelEnv(gym.Env):
 
         self.step_idx += 1
         # New observation
+        self.error_integral += last_target - current_lataccel
         state, target, future_plan = get_state_target_futureplan(self.data, self.step_idx)
-        obs = self.get_observation(state, current_lataccel, target, future_plan)
+        obs = self.get_observation(
+            state,
+            current_lataccel,
+            target,
+            future_plan,
+            self.last_error,
+            self.error_integral,
+        )
         self.state_history.append(state)
         self.target_lataccel_history.append(target)
+        self.last_error = last_target - current_lataccel
 
         return obs, reward, terminated, truncated, {}
 
