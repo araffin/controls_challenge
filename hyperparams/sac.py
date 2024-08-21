@@ -6,7 +6,7 @@ default_hyperparams = dict(
     # policy_kwargs={},
     learning_starts=5000,
     env_wrapper=[
-        {"rl_zoo3.wrappers.HistoryWrapper": {"horizon": 2}},
+        # {"rl_zoo3.wrappers.HistoryWrapper": {"horizon": 2}},
         {
             "custom_envs.filter_wrappers.ActionFilterWrapper": {
                 "sampling_rate": 60,
@@ -21,5 +21,6 @@ hyperparams = {}
 
 for env_id in [
     "TinyPhysicsEnv-v0",
+    "LatAccel-v0",
 ]:
     hyperparams[env_id] = default_hyperparams

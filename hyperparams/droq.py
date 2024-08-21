@@ -26,5 +26,6 @@ hyperparams = {}
 
 for env_id in [
     "TinyPhysicsEnv-v0",
+    "LatAccel-v0",
 ]:
     hyperparams[env_id] = default_hyperparams

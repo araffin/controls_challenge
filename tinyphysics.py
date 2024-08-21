@@ -135,6 +135,7 @@ class TinyPhysicsSimulator:
         if fixed_seed:
             seed = int(md5(self.data_path.encode()).hexdigest(), 16) % 10**4
             np.random.seed(seed)
+        np.random.seed(0)
 
     def get_data(self, data_path: str) -> pd.DataFrame:
         df = pd.read_csv(data_path)
@@ -165,14 +166,14 @@ class TinyPhysicsSimulator:
         self.current_lataccel_history.append(self.current_lataccel)
 
     def control_step(self, step_idx: int, action: Optional[float]) -> None:
-        if action is None and not step_idx < CONTROL_START_IDX:
-            assert self.controller is not None, "Controller is not initialized"
-            action = self.controller.update(
-                self.target_lataccel_history[step_idx],
-                self.current_lataccel,
-                self.state_history[step_idx],
-                future_plan=self.futureplan,
-            )
+        # if action is None and not step_idx < CONTROL_START_IDX:
+        #     assert self.controller is not None, "Controller is not initialized"
+        action = self.controller.update(  # type: ignore[union-attr]
+            self.target_lataccel_history[step_idx],
+            self.current_lataccel,
+            self.state_history[step_idx],
+            future_plan=self.futureplan,
+        )
         if step_idx < CONTROL_START_IDX:
             action = self.data["steer_command"].values[step_idx]
         assert action is not None

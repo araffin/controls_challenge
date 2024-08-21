@@ -16,11 +16,15 @@ CONTROL_START_IDX = 100
 COST_END_IDX = 500
 CONTEXT_LENGTH = 20
 VOCAB_SIZE = 1024
-LATACCEL_RANGE = [-5, 5]
+MAX_LATACCEL = 5
+# LATACCEL_RANGE = [-5, 5]
 STEER_RANGE = [-2, 2]
 MAX_ACC_DELTA = 0.5
 DEL_T = 0.1
 LAT_ACCEL_COST_MULTIPLIER = 50.0
+# For normalization
+V_MAX = 50.0
+MAX_JERK = 1  # TODO: tune this
 
 FUTURE_PLAN_STEPS = FPS * 5  # 5 secs
 
@@ -30,8 +34,8 @@ FuturePlan = namedtuple("FuturePlan", ["lataccel", "roll_lataccel", "v_ego", "a_
 
 class LataccelTokenizer:
     vocab_size: int = 1024
-    lat_accell_min: int = -5
-    lat_accell_max: int = 5
+    lat_accell_min: int = -MAX_LATACCEL
+    lat_accell_max: int = MAX_LATACCEL
 
     def __init__(self):
         self.bins = np.linspace(self.lat_accell_min, self.lat_accell_max, self.vocab_size)
@@ -103,15 +107,15 @@ def get_data(data_path: Path) -> pd.DataFrame:
 
 
 def get_state_target_futureplan(dataframe: pd.DataFrame, step_idx: int) -> tuple[State, float, FuturePlan]:
-    state = data.iloc[step_idx]
+    state = dataframe.iloc[step_idx]
     return (
         State(roll_lataccel=state["roll_lataccel"], v_ego=state["v_ego"], a_ego=state["a_ego"]),
         state["target_lataccel"],
         FuturePlan(
-            lataccel=data["target_lataccel"].values[step_idx + 1 : step_idx + FUTURE_PLAN_STEPS].tolist(),
-            roll_lataccel=data["roll_lataccel"].values[step_idx + 1 : step_idx + FUTURE_PLAN_STEPS].tolist(),
-            v_ego=data["v_ego"].values[step_idx + 1 : step_idx + FUTURE_PLAN_STEPS].tolist(),
-            a_ego=data["a_ego"].values[step_idx + 1 : step_idx + FUTURE_PLAN_STEPS].tolist(),
+            lataccel=dataframe["target_lataccel"].values[step_idx + 1 : step_idx + FUTURE_PLAN_STEPS].tolist(),
+            roll_lataccel=dataframe["roll_lataccel"].values[step_idx + 1 : step_idx + FUTURE_PLAN_STEPS].tolist(),
+            v_ego=dataframe["v_ego"].values[step_idx + 1 : step_idx + FUTURE_PLAN_STEPS].tolist(),
+            a_ego=dataframe["a_ego"].values[step_idx + 1 : step_idx + FUTURE_PLAN_STEPS].tolist(),
         ),
     )
 

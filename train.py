@@ -6,7 +6,10 @@ from gymnasium.envs.registration import register
 from rl_zoo3.train import train
 from sbx import DDPG, DQN, PPO, SAC, TD3, TQC, CrossQ
 
-# from tinyphysics import TinyPhysicsEnv
+import gym_env
+
+# Register the environment
+gym_env.register_env()
 
 rl_zoo3.ALGOS["ddpg"] = DDPG
 rl_zoo3.ALGOS["dqn"] = DQN
