@@ -93,9 +93,9 @@ class LatAccelEnv(gym.Env):
         pid_obs = np.array(
             [
                 current_lataccel / MAX_LATACCEL,
-                current_error / MAX_LATACCEL,
-                error_diff / MAX_LATACCEL,
-                error_integral / MAX_ERROR_SUM,
+                current_error,
+                error_diff,
+                error_integral,
             ]
         )
         return pid_obs.astype(np.float32).flatten()
