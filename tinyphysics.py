@@ -9,24 +9,19 @@ from functools import partial
 from hashlib import md5
 from io import BytesIO
 from pathlib import Path
-from typing import Optional, Union
+from typing import Union
 
-import gymnasium
 import matplotlib.pyplot as plt
 import numpy as np
 import onnxruntime as ort
 import pandas as pd
 import seaborn as sns
-from gymnasium.spaces import Box
 from tqdm.contrib.concurrent import process_map
 
 from controllers import BaseController
-from controllers.pid import Controller as PIDController
 
 sns.set_theme()
 signal.signal(signal.SIGINT, signal.SIG_DFL)  # Enable Ctrl-C on plot windows
-
-CURRENT_DIR = Path(__file__).resolve().parent
 
 ACC_G = 9.81
 FPS = 10
@@ -90,12 +85,7 @@ class TinyPhysicsModel:
         sample = np.random.choice(probs.shape[2], p=probs[0, -1])
         return sample
 
-    def get_current_lataccel(
-        self,
-        sim_states: list[State],
-        actions: list[float],
-        past_preds: list[float],
-    ) -> float:
+    def get_current_lataccel(self, sim_states: list[State], actions: list[float], past_preds: list[float]) -> float:
         tokenized_actions = self.tokenizer.encode(past_preds)
         raw_states = [list(x) for x in sim_states]
         states = np.column_stack([actions, raw_states])
@@ -103,27 +93,19 @@ class TinyPhysicsModel:
             "states": np.expand_dims(states, axis=0).astype(np.float32),
             "tokens": np.expand_dims(tokenized_actions, axis=0).astype(np.int64),
         }
-        return self.tokenizer.decode(self.predict(input_data, temperature=0.8))  # type: ignore[return-value]
+        return self.tokenizer.decode(self.predict(input_data, temperature=0.8))
 
 
 class TinyPhysicsSimulator:
-    def __init__(
-        self,
-        model: TinyPhysicsModel,
-        data_path: str,
-        controller: Optional[BaseController] = None,
-        debug: bool = False,
-        reset: bool = True,
-    ) -> None:
+    def __init__(self, model: TinyPhysicsModel, data_path: str, controller: BaseController, debug: bool = False) -> None:
         self.data_path = data_path
         self.sim_model = model
         self.data = self.get_data(data_path)
         self.controller = controller
         self.debug = debug
-        if reset:
-            self.reset()
+        self.reset()
 
-    def reset(self, fixed_seed: bool = True) -> None:
+    def reset(self) -> None:
         self.step_idx = CONTEXT_LENGTH
         state_target_futureplans = [self.get_state_target_futureplan(i) for i in range(self.step_idx)]
         self.state_history = [x[0] for x in state_target_futureplans]
@@ -132,10 +114,8 @@ class TinyPhysicsSimulator:
         self.target_lataccel_history = [x[1] for x in state_target_futureplans]
         self.target_future = None
         self.current_lataccel = self.current_lataccel_history[-1]
-        if fixed_seed:
-            seed = int(md5(self.data_path.encode()).hexdigest(), 16) % 10**4
-            np.random.seed(seed)
-        np.random.seed(0)
+        seed = int(md5(self.data_path.encode()).hexdigest(), 16) % 10**4
+        np.random.seed(seed)
 
     def get_data(self, data_path: str) -> pd.DataFrame:
         df = pd.read_csv(data_path)
@@ -145,8 +125,9 @@ class TinyPhysicsSimulator:
                 "v_ego": df["vEgo"].values,
                 "a_ego": df["aEgo"].values,
                 "target_lataccel": df["targetLateralAcceleration"].values,
-                # steer commands are logged with left-positive convention but this simulator uses right-positive
-                "steer_command": -df["steerCommand"].values,
+                "steer_command": -df[
+                    "steerCommand"
+                ].values,  # steer commands are logged with left-positive convention but this simulator uses right-positive
             }
         )
         return processed_df
@@ -165,10 +146,8 @@ class TinyPhysicsSimulator:
 
         self.current_lataccel_history.append(self.current_lataccel)
 
-    def control_step(self, step_idx: int, action: Optional[float]) -> None:
-        # if action is None and not step_idx < CONTROL_START_IDX:
-        #     assert self.controller is not None, "Controller is not initialized"
-        action = self.controller.update(  # type: ignore[union-attr]
+    def control_step(self, step_idx: int) -> None:
+        action = self.controller.update(
             self.target_lataccel_history[step_idx],
             self.current_lataccel,
             self.state_history[step_idx],
@@ -176,40 +155,8 @@ class TinyPhysicsSimulator:
         )
         if step_idx < CONTROL_START_IDX:
             action = self.data["steer_command"].values[step_idx]
-        assert action is not None
         action = np.clip(action, STEER_RANGE[0], STEER_RANGE[1])
         self.action_history.append(action)
-
-    def get_observation(self) -> np.ndarray:
-        state, target_lataccel, futureplan = self.get_state_target_futureplan(self.step_idx)
-
-        # For the last step, no future plan is available
-        if self.step_idx == len(self.data) - 1:
-            futureplan = FuturePlan(
-                lataccel=[0] * FUTURE_PLAN_STEPS,
-                roll_lataccel=[0] * FUTURE_PLAN_STEPS,
-                v_ego=[0] * FUTURE_PLAN_STEPS,
-                a_ego=[0] * FUTURE_PLAN_STEPS,
-            )
-
-        return (
-            np.array(
-                [
-                    self.current_lataccel,
-                    target_lataccel,
-                    state.roll_lataccel,
-                    state.v_ego,
-                    state.a_ego,
-                    # TODO: give more of the future plan
-                    futureplan.lataccel[0],
-                    futureplan.roll_lataccel[0],
-                    futureplan.v_ego[0],
-                    futureplan.a_ego[0],
-                ]
-            )
-            .flatten()
-            .astype(np.float32)
-        )
 
     def get_state_target_futureplan(self, step_idx: int) -> tuple[State, float, FuturePlan]:
         state = self.data.iloc[step_idx]
@@ -224,35 +171,14 @@ class TinyPhysicsSimulator:
             ),
         )
 
-    def step(self, action: Optional[float] = None) -> tuple[np.ndarray, float, bool, bool, dict]:
+    def step(self) -> None:
         state, target, futureplan = self.get_state_target_futureplan(self.step_idx)
         self.state_history.append(state)
         self.target_lataccel_history.append(target)
         self.futureplan = futureplan
-        self.control_step(self.step_idx, action)
+        self.control_step(self.step_idx)
         self.sim_step(self.step_idx)
         self.step_idx += 1
-        if self.step_idx < len(self.data):
-            obs = self.get_observation()
-            reward = self.compute_immediate_reward()
-        else:
-            obs = np.zeros(9)
-            reward = 0.0
-
-        terminated = False
-        truncated = self.step_idx >= len(self.data) - 1
-        return obs, reward, terminated, truncated, {}
-
-    def compute_immediate_reward(self) -> float:
-        last_pred = np.array(self.current_lataccel_history)[-2]
-        pred = np.array(self.current_lataccel_history)[-1]
-        target = np.array(self.target_lataccel_history)[-1]
-        lat_accel_cost = np.mean((target - pred) ** 2)
-        # jerk_cost = np.mean((np.diff(pred) / DEL_T) ** 2) * 100
-        jerk_cost = np.mean(((pred - last_pred) / DEL_T) ** 2)
-        jerk_cost = np.clip(jerk_cost, 0, 5)
-        total_cost = (lat_accel_cost * LAT_ACCEL_COST_MULTIPLIER) + jerk_cost
-        return -total_cost * 0.1
 
     def plot_data(self, ax, lines, axis_labels, title) -> None:
         ax.clear()
@@ -284,8 +210,8 @@ class TinyPhysicsSimulator:
             self.step()
             if self.debug and self.step_idx % 10 == 0:
                 print(
-                    f"Step {self.step_idx:<5}: Current lataccel: {self.current_lataccel:>6.2f}"
-                    f", Target lataccel: {self.target_lataccel_history[-1]:>6.2f}"
+                    f"Step {self.step_idx:<5}: Current lataccel: {self.current_lataccel:>6.2f}, "
+                    f"Target lataccel: {self.target_lataccel_history[-1]:>6.2f}"
                 )
                 self.plot_data(
                     ax[0],
@@ -307,136 +233,6 @@ class TinyPhysicsSimulator:
             plt.ioff()
             plt.show()
         return self.compute_cost()
-
-
-# Gym interface for the simulator
-class TinyPhysicsEnv(gymnasium.Env):
-    sim: TinyPhysicsSimulator
-
-    def __init__(self, debug: bool = False, max_range: float = 2.0, use_pid: bool = False, pid_actions: bool = False):
-        super().__init__()
-        self.data_path = CURRENT_DIR / "data"
-        # Do not take the first 7000 files, used for evaluation
-        self.datasets = sorted(list(self.data_path.glob("*.csv")))[7000:]
-        self.model_path = CURRENT_DIR / "models/tinyphysics.onnx"
-
-        # TODO: check bounds, should be -5 to 5
-        # self.observation_space = Box(low=-np.inf, high=np.inf, shape=(4,), dtype=np.float32)
-        # with future plan (next target lataccel, next roll lataccel, next v_ego, next a_ego)
-        # self.observation_space = Box(low=-np.inf, high=np.inf, shape=(9,), dtype=np.float32)
-
-        # if use_pid:
-        #     self.n_obs += 1
-        # self.observation_space = Box(low=-np.inf, high=np.inf, shape=(9,), dtype=np.float32)
-        # PID obs
-        # self.observation_space = Box(low=-np.inf, high=np.inf, shape=(3,), dtype=np.float32)
-        # PID obs + future plan + last action
-        self.observation_space = Box(low=-np.inf, high=np.inf, shape=(7,), dtype=np.float32)
-
-        self.action_space = Box(low=-1.0, high=1.0, shape=(1,), dtype=np.float32)
-        self.pid_actions = pid_actions
-        if pid_actions:
-            # Kp, Ki, Kd
-            self.action_space = Box(low=-1.0, high=1.0, shape=(3,), dtype=np.float32)
-
-        self.action_scale = max_range  # STEER_RANGE[1]
-        self.pid_controller = PIDController()
-        self.use_pid = use_pid
-        self.prev_error = 0.0
-        self.error_integral = 0.0
-
-        self.debug = debug
-
-    def reset(self, seed: Optional[int] = None, options=None) -> tuple[np.ndarray, dict]:
-        if seed is not None:
-            np.random.seed(seed)
-        # Select a random dataset
-        data_path = self.data_path / np.random.choice(self.datasets)  # type: ignore[arg-type]
-
-        self.sim = TinyPhysicsSimulator(
-            TinyPhysicsModel(str(self.model_path), self.debug), str(data_path), None, self.debug, reset=False
-        )
-        # self.sim.controller = self.pid_controller
-        self.sim.reset(fixed_seed=False)
-        # Warm up the controller
-        for _ in range(CONTROL_START_IDX - CONTEXT_LENGTH):
-            obs, _, _, _, _ = self.sim.step()
-
-        # if self.use_pid:
-        #     obs = np.append(obs, 0.0)
-        _, target, _ = self.sim.get_state_target_futureplan(self.sim.step_idx)
-
-        # PID obs
-        self.error_integral = 0.0
-        self.prev_error = 0.0
-        obs = self.get_pid_plus_obs(self.sim.current_lataccel, target)
-
-        return obs, {}
-
-    def get_pid_obs(self, current_lataccel: float, target_lataccel: float) -> np.ndarray:
-        error = target_lataccel - current_lataccel
-        error_diff = error - self.prev_error
-        self.error_integral += error
-        self.prev_error = error
-        self.error_integral = np.clip(self.error_integral, -5, 5)
-        last_action = self.sim.action_history[-1] if self.sim.action_history else 0.0
-        return np.array([error, error_diff, self.error_integral, last_action]).astype(np.float32)
-
-    def get_pid_plus_obs(self, current_lataccel: float, target_lataccel: float) -> np.ndarray:
-        obs_pid = self.get_pid_obs(current_lataccel, target_lataccel)
-        _, _, futureplan = self.sim.get_state_target_futureplan(self.sim.step_idx)
-        next_lateral_accel = np.zeros(3)
-        n_next = min(len(futureplan.lataccel), 3)
-        next_lateral_accel[:n_next] = target_lataccel
-        next_lateral_accel[:n_next] -= futureplan.lataccel[:n_next]
-        return np.array([*obs_pid, *next_lateral_accel]).astype(np.float32)
-
-    def step(self, action: np.ndarray) -> tuple[np.ndarray, float, bool, bool, dict]:
-        # TODO: check off-by-one error
-        state, target, futureplan = self.sim.get_state_target_futureplan(self.sim.step_idx)
-
-        if self.pid_actions:
-            kp, ki, kd = action
-            self.pid_controller.p = abs(kp)
-            self.pid_controller.i = abs(ki) * 0.1
-            self.pid_controller.d = -abs(kd) * 0.5
-            action = self.pid_controller.update(  # type: ignore[assignment]
-                target,
-                self.sim.current_lataccel,
-                state,
-                future_plan=futureplan,
-            )
-        else:
-            action = action.item() * self.action_scale
-
-        if self.use_pid:
-            action_pid = self.pid_controller.update(
-                target,
-                self.sim.current_lataccel,
-                state,
-                future_plan=futureplan,
-            )
-            action += action_pid
-            # action = action_pid
-
-        obs, reward, terminated, truncated, info = self.sim.step(float(action))
-
-        _, target, _ = self.sim.get_state_target_futureplan(self.sim.step_idx)
-
-        obs = self.get_pid_plus_obs(self.sim.current_lataccel, target)
-
-        # if self.use_pid:
-        #     # TODO: maybe add state of PID
-        #     obs = np.append(obs, action_pid)
-
-        if truncated:
-            costs = self.sim.compute_cost()
-            print(
-                f"lataccel_cost: {costs['lataccel_cost']:>6.4}, jerk_cost: {costs['jerk_cost']:>6.4}, "
-                f"total_cost: {costs['total_cost']:>6.4}"
-            )
-
-        return obs, reward, terminated, truncated, info
 
 
 def get_available_controllers():
@@ -493,7 +289,7 @@ if __name__ == "__main__":
             f"average total_cost: {np.mean(costs_df['total_cost']):>6.4}"
         )
         for cost in costs_df.columns:
-            plt.hist(costs_df[cost], bins=np.arange(0, 1000, 10), label=cost, alpha=0.5)  # type: ignore
+            plt.hist(costs_df[cost], bins=np.arange(0, 1000, 10), label=cost, alpha=0.5)
         plt.xlabel("costs")
         plt.ylabel("Frequency")
         plt.title("costs Distribution")
