@@ -190,7 +190,8 @@ class LatAccelEnv(gym.Env):
         jerk_penalty = -jerk_penalty / MAX_JERK
 
         # print(f"tracking_penalty: {tracking_penalty:>6.4}, jerk_penalty: {jerk_penalty:>6.4}")
-        reward = tracking_penalty + jerk_penalty
+        # reward = tracking_penalty + jerk_penalty
+        reward = tracking_penalty
 
         # Check if the episode is over
         terminated = False
