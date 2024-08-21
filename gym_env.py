@@ -143,6 +143,8 @@ class LatAccelEnv(gym.Env):
             self.error_integral += self.last_error
             self.step_idx += 1
 
+        self.error_integral = np.clip(self.error_integral, -MAX_ERROR_SUM, MAX_ERROR_SUM)
+
         obs = self.get_observation(
             state,
             current_lataccel,
@@ -207,7 +209,9 @@ class LatAccelEnv(gym.Env):
 
         self.step_idx += 1
         # New observation
-        self.error_integral += last_target - current_lataccel
+        current_error = last_target - current_lataccel
+        self.error_integral += current_error
+        self.error_integral = np.clip(self.error_integral, -MAX_ERROR_SUM, MAX_ERROR_SUM)
         state, target, future_plan = get_state_target_futureplan(self.data, self.step_idx)
         obs = self.get_observation(
             state,
@@ -219,7 +223,7 @@ class LatAccelEnv(gym.Env):
         )
         self.state_history.append(state)
         self.target_lataccel_history.append(target)
-        self.last_error = last_target - current_lataccel
+        self.last_error = current_error
 
         return obs, reward, terminated, truncated, {}
 
