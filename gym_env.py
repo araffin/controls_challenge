@@ -52,7 +52,8 @@ class LatAccelEnv(gym.Env):
         n_state = 3
         n_target = 1
         n_pid = 4
-        n_obs = n_state + n_target + FUTURE_PLAN_STEPS * n_state + n_pid
+        # n_obs = n_state + n_target + FUTURE_PLAN_STEPS * n_state + n_pid
+        n_obs = n_pid
 
         self.observation_space = spaces.Box(
             low=-np.inf,
@@ -97,8 +98,9 @@ class LatAccelEnv(gym.Env):
                 error_integral / MAX_ERROR_SUM,
             ]
         )
+        return pid_obs.astype(np.float32).flatten()
         # Concatenate all observations
-        return np.concatenate([state_obs, target_obs, future_plan_obs, pid_obs]).astype(np.float32)
+        # return np.concatenate([state_obs, target_obs, future_plan_obs, pid_obs]).astype(np.float32)
 
     def reset(self, *, seed=None, options=None) -> tuple[np.ndarray, dict]:
         if seed is not None:
