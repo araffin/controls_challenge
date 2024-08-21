@@ -195,7 +195,7 @@ class LatAccelEnv(gym.Env):
         # reward = tracking_penalty
 
         # Use bounded exponential reward
-        reward = np.exp(-tracking_error / MAX_LATACCEL)
+        reward = np.exp(-tracking_error / 0.5)
 
         # Check if the episode is over
         terminated = False
