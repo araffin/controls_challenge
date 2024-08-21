@@ -93,7 +93,7 @@ class TinyPhysicsModel:
             "states": np.expand_dims(states, axis=0).astype(np.float32),
             "tokens": np.expand_dims(tokenized_actions, axis=0).astype(np.int64),
         }
-        return self.tokenizer.decode(self.predict(input_data, temperature=0.8))
+        return self.tokenizer.decode(self.predict(input_data, temperature=0.8))  # type: ignore
 
 
 class TinyPhysicsSimulator:
@@ -289,7 +289,7 @@ if __name__ == "__main__":
             f"average total_cost: {np.mean(costs_df['total_cost']):>6.4}"
         )
         for cost in costs_df.columns:
-            plt.hist(costs_df[cost], bins=np.arange(0, 1000, 10), label=cost, alpha=0.5)
+            plt.hist(costs_df[cost], bins=np.arange(0, 1000, 10), label=cost, alpha=0.5)  # type: ignore
         plt.xlabel("costs")
         plt.ylabel("Frequency")
         plt.title("costs Distribution")
