@@ -33,7 +33,7 @@ CURRENT_DIR = Path(__file__).resolve().parent
 class LatAccelEnv(gym.Env):
     data: pd.DataFrame
 
-    def __init__(self, max_range: float = 1.0, debug: bool = False):
+    def __init__(self, max_range: float = 1.0, debug: bool = False, max_traj: int = 50):
         super().__init__()
 
         data_path = CURRENT_DIR / "data"
@@ -42,7 +42,7 @@ class LatAccelEnv(gym.Env):
         # Load the model
         self.model = TinyPhysicsModel(str(model_path), debug)
         self.debug = debug
-        self.datasets = sorted(list(data_path.glob("*.csv")))[:50]
+        self.datasets = sorted(list(data_path.glob("*.csv")))[:max_traj]
 
         # Define action space and observation space
         self.max_range = max_range
