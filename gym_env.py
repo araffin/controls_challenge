@@ -51,7 +51,7 @@ class LatAccelEnv(gym.Env):
         # TODO: maybe include history?
         n_state = 3
         n_target = 1
-        n_pid = 4
+        n_pid = 5
         # n_obs = n_state + n_target + FUTURE_PLAN_STEPS * n_state + n_pid
         n_obs = n_pid
 
@@ -90,12 +90,16 @@ class LatAccelEnv(gym.Env):
         # Preprocess and give error as input too
         current_error = target - current_lataccel
         error_diff = current_error - last_error
+        kp, ki, kd = 0.3, 0.05, -0.1
+        pid_action = kp * current_error + ki * error_integral + kd * error_diff
+
         pid_obs = np.array(
             [
                 current_lataccel / MAX_LATACCEL,
                 current_error,
                 error_diff,
                 error_integral,
+                np.clip(pid_action, -2.0, 2.0),
             ]
         )
         return pid_obs.astype(np.float32).flatten()
