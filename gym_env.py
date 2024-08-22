@@ -8,15 +8,16 @@ from gymnasium.envs import registration
 
 from controllers.pid import Controller as PIDController
 from minimal import (
+    ACC_G,
     CONTEXT_LENGTH,
     CONTROL_START_IDX,
     COST_END_IDX,
     DEL_T,
-    FUTURE_PLAN_STEPS,
+    # FUTURE_PLAN_STEPS,
     LAT_ACCEL_COST_MULTIPLIER,
     MAX_ACC_DELTA,
     MAX_ERROR_SUM,
-    MAX_JERK,
+    # MAX_JERK,
     MAX_LATACCEL,
     STEER_RANGE,
     V_MAX,
@@ -28,6 +29,8 @@ from minimal import (
 )
 
 CURRENT_DIR = Path(__file__).resolve().parent
+
+OBS_FUTURE_PLAN_STEPS = 5  # FUTURE_PLAN_STEPS
 
 
 class LatAccelEnv(gym.Env):
@@ -52,8 +55,9 @@ class LatAccelEnv(gym.Env):
         n_state = 3
         n_target = 1
         n_pid = 5
-        # n_obs = n_state + n_target + FUTURE_PLAN_STEPS * n_state + n_pid
-        n_obs = n_pid
+        # n_obs = n_state + n_target + n_pid
+        n_obs = n_state + n_target + OBS_FUTURE_PLAN_STEPS * n_state + n_pid
+        # n_obs = n_pid
 
         self.observation_space = spaces.Box(
             low=-np.inf,
@@ -78,15 +82,19 @@ class LatAccelEnv(gym.Env):
         last_error: float,
         error_integral: float,
     ) -> np.ndarray:
-        future_plan_obs = np.zeros(3 * FUTURE_PLAN_STEPS)
-        state_obs = np.array([state.roll_lataccel / MAX_LATACCEL, state.v_ego / V_MAX, state.a_ego])
+        future_plan_obs = np.zeros(3 * OBS_FUTURE_PLAN_STEPS)
+        state_obs = np.array([state.roll_lataccel / ACC_G, state.v_ego / V_MAX, state.a_ego])
         target_obs = np.array([target])
         # future plan can be less than FUTURE_PLAN_STEPS at the end of the trajectory
         # in that case, pad with zeros
-        n_future_steps = len(future_plan.lataccel)
-        future_plan_obs[:n_future_steps] = np.array(future_plan.lataccel) / MAX_LATACCEL
-        future_plan_obs[FUTURE_PLAN_STEPS : FUTURE_PLAN_STEPS + n_future_steps] = np.array(future_plan.v_ego) / V_MAX
-        future_plan_obs[2 * FUTURE_PLAN_STEPS : 2 * FUTURE_PLAN_STEPS + n_future_steps] = np.array(future_plan.a_ego)
+        n_future_steps = min(len(future_plan.lataccel), OBS_FUTURE_PLAN_STEPS)
+        future_plan_obs[:n_future_steps] = np.array(future_plan.lataccel)[:n_future_steps] / MAX_LATACCEL
+        future_plan_obs[OBS_FUTURE_PLAN_STEPS : OBS_FUTURE_PLAN_STEPS + n_future_steps] = (
+            np.array(future_plan.v_ego)[:n_future_steps] / V_MAX
+        )
+        future_plan_obs[2 * OBS_FUTURE_PLAN_STEPS : 2 * OBS_FUTURE_PLAN_STEPS + n_future_steps] = np.array(future_plan.a_ego)[
+            :n_future_steps
+        ]
         # Preprocess and give error as input too
         current_error = target - current_lataccel
         error_diff = current_error - last_error
@@ -102,9 +110,10 @@ class LatAccelEnv(gym.Env):
                 np.clip(pid_action, -2.0, 2.0),
             ]
         )
-        return pid_obs.astype(np.float32).flatten()
+        # return pid_obs.astype(np.float32).flatten()
         # Concatenate all observations
-        # return np.concatenate([state_obs, target_obs, future_plan_obs, pid_obs]).astype(np.float32)
+        return np.concatenate([state_obs, target_obs, future_plan_obs, pid_obs]).astype(np.float32)
+        # return np.concatenate([state_obs, target_obs, pid_obs]).astype(np.float32)
 
     def reset(self, *, seed=None, options=None) -> tuple[np.ndarray, dict]:
         if seed is not None:
@@ -179,10 +188,10 @@ class LatAccelEnv(gym.Env):
         #     current_lataccel = get_state_target_futureplan(self.data, self.step_idx)[1]
         self.current_lataccel_history.append(current_lataccel)
 
-        jerk_penalty = 0.0
-        if self.step_idx > CONTROL_START_IDX:
-            # TODO: check to penalize action jerk instead
-            jerk_penalty = (self.current_lataccel_history[-1] - self.current_lataccel_history[-2]) ** 2
+        # jerk_penalty = 0.0
+        # if self.step_idx > CONTROL_START_IDX:
+        #     # TODO: check to penalize action jerk instead
+        #     jerk_penalty = (self.current_lataccel_history[-1] - self.current_lataccel_history[-2]) ** 2
 
         last_target = self.target_lataccel_history[-1]
         # Calculate reward
@@ -195,7 +204,7 @@ class LatAccelEnv(gym.Env):
         # reward = tracking_penalty
 
         # Use bounded exponential reward
-        reward = np.exp(-tracking_error / 0.08)
+        reward = np.exp(-tracking_error / 0.1)
 
         # Check if the episode is over
         terminated = False
