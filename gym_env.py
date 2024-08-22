@@ -130,6 +130,7 @@ class LatAccelEnv(gym.Env):
         self.current_lataccel_history = []
         self.last_error = 0.0
         self.error_integral = 0.0
+        self.error_diff = 0.0
 
         for i in range(CONTEXT_LENGTH):
             state, target, futureplan = get_state_target_futureplan(self.data, i)
@@ -148,7 +149,9 @@ class LatAccelEnv(gym.Env):
             self.action_history.append(action)
             current_lataccel = get_state_target_futureplan(self.data, self.step_idx)[1]
             self.current_lataccel_history.append(current_lataccel)
-            self.last_error = target - current_lataccel
+            current_error = target - current_lataccel
+            self.error_diff = current_error - self.last_error
+            self.last_error = current_error
             self.error_integral += self.last_error
             self.step_idx += 1
 
@@ -167,6 +170,11 @@ class LatAccelEnv(gym.Env):
     def step(self, action: np.ndarray) -> tuple[np.ndarray, float, bool, bool, dict]:
         # Clip the action to valid range
         action = np.clip(action.item() * self.max_range, STEER_RANGE[0], STEER_RANGE[1])
+
+        # kp, ki, kd = 0.3, 0.05, -0.1
+        # pid_action = kp * self.last_error + ki * self.error_integral + kd * self.error_diff
+        # action = np.clip(pid_action,  STEER_RANGE[0], STEER_RANGE[1])
+
         self.action_history.append(action)  # type: ignore[arg-type]
 
         # Simulate the model step
@@ -237,6 +245,7 @@ class LatAccelEnv(gym.Env):
         )
         self.state_history.append(state)
         self.target_lataccel_history.append(target)
+        self.error_diff = current_error - self.last_error
         self.last_error = current_error
 
         return obs, reward, terminated, truncated, {}
