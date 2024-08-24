@@ -36,7 +36,7 @@ OBS_FUTURE_PLAN_STEPS = 5  # FUTURE_PLAN_STEPS
 class LatAccelEnv(gym.Env):
     data: pd.DataFrame
 
-    def __init__(self, max_range: float = 1.0, debug: bool = False, max_traj: int = 50):
+    def __init__(self, max_range: float = 1.0, debug: bool = False, max_traj: int = 50, pid_coef: float = 0.0):
         super().__init__()
 
         data_path = CURRENT_DIR / "data"
@@ -49,6 +49,7 @@ class LatAccelEnv(gym.Env):
 
         # Define action space and observation space
         self.max_range = max_range
+        self.pid_coef = pid_coef
         self.action_space = spaces.Box(low=-1.0, high=1.0, shape=(1,), dtype=np.float32)
 
         # TODO: maybe include history?
@@ -171,9 +172,13 @@ class LatAccelEnv(gym.Env):
         # Clip the action to valid range
         action = np.clip(action.item() * self.max_range, STEER_RANGE[0], STEER_RANGE[1])
 
-        # kp, ki, kd = 0.3, 0.05, -0.1
-        # pid_action = kp * self.last_error + ki * self.error_integral + kd * self.error_diff
-        # action = np.clip(pid_action,  STEER_RANGE[0], STEER_RANGE[1])
+        kp, ki, kd = 0.3, 0.05, -0.1
+        pid_action = kp * self.last_error + ki * self.error_integral + kd * self.error_diff
+        pid_action = np.clip(pid_action, STEER_RANGE[0], STEER_RANGE[1])
+
+        # Blend PID and RL
+        h = self.pid_coef
+        action = h * pid_action + (1.0 - h) * action
 
         self.action_history.append(action)  # type: ignore[arg-type]
 
