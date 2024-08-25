@@ -77,6 +77,9 @@ def create_report(test, baseline, sample_rollouts, costs, num_segs):
     )
     res.append(agg_df.to_html(index=False))
 
+    # Print results
+    print(agg_df.to_string(index=False))
+
     passed_baseline = (
         agg_df[agg_df["controller"] == "test"]["total_cost"].values[0]
         < agg_df[agg_df["controller"] == "baseline"]["total_cost"].values[0]
