@@ -34,6 +34,7 @@ CURRENT_DIR = Path(__file__).resolve().parent
 OBS_FUTURE_PLAN_STEPS = 5  # FUTURE_PLAN_STEPS
 EXP_REWARD_TEMP = 0.1
 INVERSE_ERROR_EPS = 0.1
+HYBRID_ERROR_THRESHOLD = 1.0
 
 
 class RewardType(Enum):
@@ -43,6 +44,7 @@ class RewardType(Enum):
     L2_RELATIVE = "l2_relative"
     INVERSE_ERROR = "inverse_error"
     INVERSE_RELATIVE = "inverse_relative"
+    HYBRID = "hybrid" # inverse error for small errors, l2 error for large errors
 
 
 class LatAccelEnv(gym.Env):
@@ -256,6 +258,16 @@ class LatAccelEnv(gym.Env):
             previous_reward = INVERSE_ERROR_EPS / (INVERSE_ERROR_EPS + self.last_error**2)
             current_reward = INVERSE_ERROR_EPS / (INVERSE_ERROR_EPS + tracking_error)
             reward = self.next_reward_discount * current_reward - previous_reward
+        elif self.reward_type == RewardType.HYBRID:
+            inverse_reward = INVERSE_ERROR_EPS / (INVERSE_ERROR_EPS + tracking_error)
+            l2_penalty = tracking_error
+            # Inverse reward dominates if tracking error is small
+            reward = inverse_reward - l2_penalty
+            # Other option:
+            # above_threshold = tracking_error > HYBRID_THRESHOLD
+            # reward = inverse_reward - above_threshold * l2_penalty
+        else:
+            raise NotImplementedError(f"Reward type {self.reward_type} not implemented")
 
         # tracking_penalty = -(tracking_error / MAX_LATACCEL * LAT_ACCEL_COST_MULTIPLIER)
         # jerk_penalty = -jerk_penalty / MAX_JERK
