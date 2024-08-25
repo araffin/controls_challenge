@@ -79,7 +79,7 @@ Like this sort of stuff? You might want to work at comma!
 
 ```
 JAX_PLATFORMS=cpu CUDA_VISIBLE_DEVICES= python train.py --algo ppo --env LatAccel-v0 \
---verbose 0 --n-eval-envs 6 -param n_envs:16 n_steps:256 -P -c hyperparams/ppo.py \
---env-kwargs max_range:0.5 debug:True reward_type:"'exp_error'" \
+--verbose 0 --n-eval-envs 10 -param n_envs:16 n_steps:256 -P -c hyperparams/ppo.py \
+--env-kwargs max_range:0.5 debug:True reward_type:"'hybrid'" \
 --eval-episodes 20 --vec-env subproc -n 500000
 ```
