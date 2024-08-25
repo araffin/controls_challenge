@@ -55,7 +55,7 @@ class LatAccelEnv(gym.Env):
         max_traj: int = 50,
         pid_coef: float = 0.0,
         reward_type: str = RewardType.EXP_ERROR.value,
-        reward_discount: float = 0.99,
+        reward_discount: float = 1.0,
     ):
         super().__init__()
 
@@ -246,7 +246,9 @@ class LatAccelEnv(gym.Env):
             reward = -tracking_error
         elif self.reward_type == RewardType.L2_RELATIVE:
             # Use relative improvement as reward
-            reward = -(self.next_reward_discount * self.last_error**2 - tracking_error)
+            previous_penalty = self.last_error**2
+            current_penalty = tracking_error
+            reward = previous_penalty - self.next_reward_discount * current_penalty
         elif self.reward_type == RewardType.INVERSE_ERROR:
             # Use inverse error as reward
             reward = INVERSE_ERROR_EPS / (INVERSE_ERROR_EPS + tracking_error)
