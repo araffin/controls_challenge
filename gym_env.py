@@ -1,3 +1,4 @@
+from enum import Enum
 from pathlib import Path
 
 import gymnasium as gym
@@ -31,12 +32,30 @@ from minimal import (
 CURRENT_DIR = Path(__file__).resolve().parent
 
 OBS_FUTURE_PLAN_STEPS = 5  # FUTURE_PLAN_STEPS
+EXP_REWARD_TEMP = 0.1
+INVERSE_ERROR_EPS = 0.1
+
+
+class RewardType(Enum):
+    EXP_ERROR = "exp_error"
+    EXP_RELATIVE = "exp_relative"
+    L2_ERROR = "l2_error"
+    L2_RELATIVE = "l2_relative"
+    INVERSE_ERROR = "inverse_error"
+    INVERSE_RELATIVE = "inverse_relative"
 
 
 class LatAccelEnv(gym.Env):
     data: pd.DataFrame
 
-    def __init__(self, max_range: float = 1.0, debug: bool = False, max_traj: int = 50, pid_coef: float = 0.0):
+    def __init__(
+        self,
+        max_range: float = 1.0,
+        debug: bool = False,
+        max_traj: int = 50,
+        pid_coef: float = 0.0,
+        reward_type: str = RewardType.EXP_ERROR.value,
+    ):
         super().__init__()
 
         data_path = CURRENT_DIR / "data"
@@ -73,6 +92,8 @@ class LatAccelEnv(gym.Env):
         self.target_lataccel_history: list[float] = []
         self.step_idx = 0
         self.controller = PIDController()
+
+        self.reward_type = RewardType(reward_type)
 
     @staticmethod
     def get_observation(
@@ -209,15 +230,35 @@ class LatAccelEnv(gym.Env):
         last_target = self.target_lataccel_history[-1]
         # Calculate reward
         tracking_error = (last_target - current_lataccel) ** 2
+        if self.reward_type == RewardType.EXP_ERROR:
+            # Use bounded exponential reward
+            reward = np.exp(-tracking_error / EXP_REWARD_TEMP)
+        elif self.reward_type == RewardType.EXP_RELATIVE:
+            # Use relative improvement as reward
+            previous_reward = np.exp(-self.last_error**2 / EXP_REWARD_TEMP)
+            current_reward = np.exp(-(tracking_error**2) / EXP_REWARD_TEMP)
+            reward = current_reward - previous_reward
+        elif self.reward_type == RewardType.L2_ERROR:
+            # Use L2 error as reward
+            # norm_factor = MAX_LATACCEL ** 2
+            reward = -tracking_error
+        elif self.reward_type == RewardType.L2_RELATIVE:
+            # Use relative improvement as reward
+            reward = self.last_error**2 - tracking_error
+        elif self.reward_type == RewardType.INVERSE_ERROR:
+            # Use inverse error as reward
+            reward = INVERSE_ERROR_EPS / (INVERSE_ERROR_EPS + tracking_error)
+        elif self.reward_type == RewardType.INVERSE_RELATIVE:
+            previous_reward = INVERSE_ERROR_EPS / (INVERSE_ERROR_EPS + self.last_error**2)
+            current_reward = INVERSE_ERROR_EPS / (INVERSE_ERROR_EPS + tracking_error)
+            reward = current_reward - previous_reward
+
         # tracking_penalty = -(tracking_error / MAX_LATACCEL * LAT_ACCEL_COST_MULTIPLIER)
         # jerk_penalty = -jerk_penalty / MAX_JERK
 
         # print(f"tracking_penalty: {tracking_penalty:>6.4}, jerk_penalty: {jerk_penalty:>6.4}")
         # reward = tracking_penalty + jerk_penalty
         # reward = tracking_penalty
-
-        # Use bounded exponential reward
-        reward = np.exp(-tracking_error / 0.1)
 
         # Check if the episode is over
         terminated = False
