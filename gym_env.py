@@ -55,6 +55,7 @@ class LatAccelEnv(gym.Env):
         max_traj: int = 50,
         pid_coef: float = 0.0,
         reward_type: str = RewardType.EXP_ERROR.value,
+        reward_discount: float = 0.99,
     ):
         super().__init__()
 
@@ -94,6 +95,7 @@ class LatAccelEnv(gym.Env):
         self.controller = PIDController()
 
         self.reward_type = RewardType(reward_type)
+        self.next_reward_discount = reward_discount
 
     @staticmethod
     def get_observation(
@@ -237,21 +239,21 @@ class LatAccelEnv(gym.Env):
             # Use relative improvement as reward
             previous_reward = np.exp(-self.last_error**2 / EXP_REWARD_TEMP)
             current_reward = np.exp(-(tracking_error**2) / EXP_REWARD_TEMP)
-            reward = current_reward - previous_reward
+            reward = self.next_reward_discount * current_reward - previous_reward
         elif self.reward_type == RewardType.L2_ERROR:
             # Use L2 error as reward
             # norm_factor = MAX_LATACCEL ** 2
             reward = -tracking_error
         elif self.reward_type == RewardType.L2_RELATIVE:
             # Use relative improvement as reward
-            reward = self.last_error**2 - tracking_error
+            reward = -(self.next_reward_discount * self.last_error**2 - tracking_error)
         elif self.reward_type == RewardType.INVERSE_ERROR:
             # Use inverse error as reward
             reward = INVERSE_ERROR_EPS / (INVERSE_ERROR_EPS + tracking_error)
         elif self.reward_type == RewardType.INVERSE_RELATIVE:
             previous_reward = INVERSE_ERROR_EPS / (INVERSE_ERROR_EPS + self.last_error**2)
             current_reward = INVERSE_ERROR_EPS / (INVERSE_ERROR_EPS + tracking_error)
-            reward = current_reward - previous_reward
+            reward = self.next_reward_discount * current_reward - previous_reward
 
         # tracking_penalty = -(tracking_error / MAX_LATACCEL * LAT_ACCEL_COST_MULTIPLIER)
         # jerk_penalty = -jerk_penalty / MAX_JERK
