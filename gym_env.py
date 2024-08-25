@@ -44,7 +44,7 @@ class RewardType(Enum):
     L2_RELATIVE = "l2_relative"
     INVERSE_ERROR = "inverse_error"
     INVERSE_RELATIVE = "inverse_relative"
-    HYBRID = "hybrid" # inverse error for small errors, l2 error for large errors
+    HYBRID = "hybrid"  # inverse error for small errors, l2 error for large errors
 
 
 class LatAccelEnv(gym.Env):
@@ -262,10 +262,10 @@ class LatAccelEnv(gym.Env):
             inverse_reward = INVERSE_ERROR_EPS / (INVERSE_ERROR_EPS + tracking_error)
             l2_penalty = tracking_error
             # Inverse reward dominates if tracking error is small
-            # reward = inverse_reward - l2_penalty
+            reward = inverse_reward - l2_penalty
             # Other option:
-            above_threshold = tracking_error > HYBRID_ERROR_THRESHOLD
-            reward = inverse_reward - above_threshold * l2_penalty
+            # above_threshold = tracking_error > HYBRID_ERROR_THRESHOLD
+            # reward = inverse_reward - above_threshold * l2_penalty
         else:
             raise NotImplementedError(f"Reward type {self.reward_type} not implemented")
 
